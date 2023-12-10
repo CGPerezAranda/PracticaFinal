@@ -1,0 +1,251 @@
+import java_cup.runtime.*;
+
+
+
+action code {:
+    //variables globales
+    private int contVariables = 0;
+    private int contEtiquetas =0;
+
+
+    //Genera etiquetas con la estructura E# siendo # un número entero
+    private String crearEtiqueta() {
+        return "L" + contEtiquetas++;
+    }
+
+    //Genera variables con la estructura t# siendo # un número entero
+    private String crearVariable() {
+        return "t" + contVariables++;
+    }
+    
+    //Genradores de Código intermedio
+    /* ################################################################### */
+
+    //Referencias
+    public void etiqueta(String e) {
+        PLC.out.println(e + ":");
+    }
+
+    public void variable(String variable, String value) {
+        PLC.out.println("\t" + variable + " = " + value + ";");
+    }
+
+    public void goto_(String e) {
+        PLC.out.println("\tgoto " + e + ";");
+    }
+
+    //Operaciones
+    public void suma(String var, String op1, String op2) {
+        PLC.out.println("\t" + var + " = " + op1 + " + " + op2 + ";");
+    }
+
+    public void resta(String var, String op1, String op2) {
+        PLC.out.println("\t" + var + " = " + op1 + " - " + op2 + ";");
+    }
+
+    public void multiplicacion(String var, String op1, String op2) {
+        PLC.out.println("\t" + var + " = " + op1 + " * " + op2 + ";");
+    }
+
+    public void division(String var, String op1, String op2) {
+        PLC.out.println("\t" + var + " = " + op1 + " / " + op2 + ";");
+    }
+
+    public void negativo(String var, String op) {
+        PLC.out.println("\t" + var + " = -" + op + ";");
+    }
+
+    /* Funciones auxiliares */
+
+    public void print(String s) {
+        System.out.println("\tprint " + s + ";");
+    }
+
+    public void iflt(String v1, String v2, String e) {
+        PLC.out.println("\tif (" + v1 + " < " + v2 + ") goto " + e + ";");
+    }
+
+    public void ifeq(String v1, String v2, String e) {
+        PLC.out.println("\tif (" + v1 + " == " + v2 + ") goto " + e + ";");
+    }
+
+    /* ################################################################### */
+
+    /* Clase interna que se ocupa de almacenar 3 etiquetas 
+    *  de forma que puedan moverse por la grmática a través de RESULT
+    *   
+    *  Los parámetros representan lo siguiente:  
+    *   1.- Salto si se cumple la condición   
+    *   2.- Salto si no se cumple la condición
+    *   3.- Salto de salida tras ejecutar la sentencia
+    *
+    */
+    
+    class Condicion {
+
+        // Variable
+        private String[] etiquetas = {null, null, null};
+
+        //Constructores
+        public Condicion() {
+            this.etiquetas[0] = crearEtiqueta();
+            this.etiquetas[1] = crearEtiqueta();
+        }
+
+        public Condicion(String e1, String e2) {
+            this.etiquetas[0] = e1;
+            this.etiquetas[1] = e2;
+        }
+
+        //Getters
+        public String etqTrue() {
+            return this.etiquetas[0];
+        }
+
+        public String etqFalse() {
+            return this.etiquetas[1];
+        }
+        public String etqSalida() {
+            return this.etiquetas[2];
+        }
+
+        //Setters
+        public void setEtqTrue(String e) {
+            this.etiquetas[0] = e;
+        }
+        public void setEtqFalse(String e) {
+            this.etiquetas[1] = e;
+        }
+        public void setEtqSalida(String e) {
+            this.etiquetas[2] = e;
+        }   
+    }
+:}
+
+
+/* TERMINALES */
+
+
+terminal    IF, ELSE, DO, WHILE, FOR, PRINT;        // Funciones del lenguaje       
+terminal    AP, CP, AC, CC, ALL, CLL;                 // Aperturas y cierres de llaves, corchetes y paréntesis
+terminal    EQ, NE, LE, LT, GE, GT, AND, OR, NO;    // Operadores lógicos
+terminal    SUM, RES, MUL, DIV, IGUAL, NEG;         // Operadores matemáticos
+terminal    PYC;                                    // Fin de sentencia
+terminal String NUM, VAR;                           // Valores numéricos y variables
+
+/* NO-TERMINALES */
+non terminal            listaSent, sent;                //Sentencias genéricas
+non terminal            sent_print, sent_if, sent_else; //Sentencias específicas
+non terminal String     exp;                            //expresión
+non terminal Condicion  cond;                           //condición
+non terminal String     sent_while, sent_for;           //sentencias de control do-while, while y for
+
+/* PRECEDENCIAS */
+precedence left         IF, ELSE, DO, WHILE, FOR, PRINT;
+precedence left         SUM, RES;
+precedence left         MUL, DIV;
+precedence left         EQ, NE, LE, LT, GE, GT;
+precedence left         AND, OR, NO;
+precedence left         VAR, NUM;
+
+precedence nonassoc     NEG;
+precedence nonassoc     AP, CP; 
+precedence nonassoc     AC, CC;
+precedence nonassoc     ALL, CLL;
+
+/* GRAMATICA */
+/* sentencias */
+
+listaSent   ::= listaSent sent
+            |   sent;
+
+sent        ::= exp PYC
+            | sent_print
+            | sent_if
+            | sent_while
+            | sent_for
+            | ALL listaSent:s CLL               {: RESULT = s; :};
+
+/* funciones */
+sent_print  ::= PRINT AP exp:e CP PYC           {: RESULT = e; print(e);:};
+                                                /* print (e);*/
+
+sent_if     ::= IF AP cond:c CP                 {: c.setEtqSalida(crearEtiqueta()); etiqueta(c.etqTrue());  :}
+                                                /* se ejecuta cond:c, crea una etiqueta, se la asigna a c como 
+                                                   salida e imprime la etiqueta de verdadero */
+                sent                            {: goto_(c.etqSalida());            etiqueta(c.etqFalse()); :} 
+                                                /* imprime goto (etiqueta de salida) y la etiqueta si falso */  
+                sent_else                       {: etiqueta(c.etqSalida());        :};
+                                                /* imprime la etiqueta de salida */
+
+sent_else   ::= ELSE sent:s                     {: RESULT = s; :}
+            |/*vacio*/;
+
+sent_while ::= WHILE                            {: RESULT = crearEtiqueta();    etiqueta(RESULT);           :}  
+                                                /* crea una etiqueta y la imprime L#:*/                               
+               AP cond:c CP                     {: c.setEtqSalida(RESULT);      etiqueta(c.etqTrue());      :}
+                                                /* se ejecuta cond:c, se le asigna la etiqueta de salida y se imprime la etiqueta de verdadero */
+               sent                             {: goto_(c.etqSalida());        etiqueta(c.etqFalse());     :} 
+                                                /* imprime goto (etiqueta de salida) y la etiqueta si falso */  
+             | DO                               {: RESULT = crearEtiqueta();    etiqueta(RESULT);           :}
+                                                /* crea una etiqueta y la imprime L#:*/ 
+               sent                            
+               WHILE AP cond:c CP PYC           {: c.setEtqSalida(RESULT);      etiqueta(c.etqTrue()); goto_(c.etqSalida());etiqueta(c.etqFalse());:};
+                                                /* se ejecuta cond:c, se le asigna la etiqueta de salida y se imprime la etiqueta de verdadero */
+                                                /* imprime goto (etiqueta de salida) y la etiqueta si falso */  
+                                                /* imprime la etiqueta de salida */
+
+sent_for    ::= FOR AP exp PYC                  {: RESULT = crearEtiqueta();    etiqueta(RESULT);           :}
+                                                /* crea una etiqueta y la imprime L#:*/
+                cond:c  PYC                     {: c.setEtqSalida(RESULT);      RESULT = crearEtiqueta();       etiqueta(RESULT);      :}
+                                                /* se ejecuta cond:c, se le asigna la etiqueta de salida y se imprime la etiqueta de verdadero */      
+                exp CP                          {: goto_(c.etqSalida());        etiqueta(c.etqTrue());     :}  
+                                                /* imprime goto (etiqueta de salida) y la etiqueta si falso */
+                sent                            {: goto_(RESULT);               etiqueta(c.etqFalse());    :};     
+                                                /* imprime goto (RESULT) y la etiqueta si falso */  
+                                                         
+/* expresiones */
+
+exp         ::= exp:e1 SUM exp:e2               {: RESULT = crearVariable(); suma(RESULT, e1, e2); :}
+                                                /* v# = e1 + e2; */
+            |   exp:e1 RES exp:e2               {: RESULT = crearVariable(); resta(RESULT, e1, e2); :}
+                                                /* v# = e1 - e2; */
+            |   exp:e1 MUL exp:e2               {: RESULT = crearVariable(); multiplicacion(RESULT, e1, e2); :}
+                                                /* v# = e1 * e2; */
+            |   exp:e1 DIV exp:e2               {: RESULT = crearVariable(); division(RESULT, e1, e2); :}
+                                                /* v# = e1 / e2; */
+            |   RES exp:e                       {: RESULT = crearVariable(); negativo(RESULT, e); :} %prec NEG
+                                                /* v# = -e; */
+            |   AP exp:e CP                     {: RESULT = e; :}
+            |   NUM:n                           {: RESULT = n; :}
+            |   VAR:v                           {: RESULT = v; :}
+            |   VAR:v IGUAL exp:e               {: RESULT = v; variable(RESULT, e); :};
+
+/* condiciones */
+cond        ::= exp:e1 EQ exp:e2                {: RESULT = new Condicion(); ifeq(e1, e2, RESULT.etqTrue()); goto_(RESULT.etqFalse()); :}
+                                                /* if(e1 == e2) goto etqTrue; goto etqFalse; */
+            |   exp:e1 NE exp:e2                {: RESULT = new Condicion(); ifeq(e1, e2, RESULT.etqFalse()); goto_(RESULT.etqTrue()); :}
+                                                /* if(e1 == e2) goto etqFalse; goto etqTrue; */
+            |   exp:e1 LE exp:e2                {: RESULT = new Condicion(); iflt(e2, e1, RESULT.etqFalse()); goto_(RESULT.etqTrue()); :}
+                                                /* if(e2 < e1) goto etqFalse; goto etqTrue; */
+            |   exp:e1 LT exp:e2                {: RESULT = new Condicion(); iflt(e1, e2, RESULT.etqTrue()); goto_(RESULT.etqFalse()); :}
+                                                /* if(e1 < e2) goto etqTrue; goto etqFalse; */
+            |   exp:e1 GE exp:e2                {: RESULT = new Condicion(); iflt(e1, e2, RESULT.etqFalse()); goto_(RESULT.etqTrue()); :}
+                                                /* if(e1 < e2) goto etqFalse; goto etqTrue; */
+            |   exp:e1 GT exp:e2                {: RESULT = new Condicion(); iflt(e2, e1, RESULT.etqTrue()); goto_(RESULT.etqFalse()); :}
+                                                /* if(e2 < e1) goto etqTrue; goto etqFalse; */
+            |   NO cond:c                       {: RESULT = new Condicion(c.etqFalse(), c.etqTrue()); :}
+                                                /* condicion negada */
+            |   cond:c1 AND                     {: etiqueta(c1.etqTrue()); :}
+                                                /* imprime lo que venga de c1; L(c1.etqTrue): */   
+                cond:c2                         {: etiqueta(c1.etqFalse()); goto_(c2.etqFalse());  RESULT = c2; :}
+                                                /* imprime lo que venga de c2; L(c1.etqFalse): goto L(c2.etqFalse); */             
+            |   cond:c1 OR                      {: etiqueta(c1.etqFalse()); :}
+                                                /* imprime lo que venga de c1; L(c1.etqFalse): */
+                cond:c2                         {: etiqueta(c1.etqTrue()); goto_(c2.etqTrue());  RESULT = c2; :}
+                                                /* imprime lo que venga de c2; L(c1.etqTrue): goto L(c1.etqTrue); */
+            |   AP cond:c CP                    {: RESULT = c; :};
+
+
+
+

@@ -1,0 +1,8 @@
+#ignore everything
+*
+#except
+!PLC.cup
+!PLC.lex
+!PLC.java
+!enunciado.pdf
+!.gitignore
